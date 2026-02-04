@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import os
-from collections import defaultdict
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import Dict, Iterable, Sequence
@@ -158,7 +157,6 @@ def extract_images(
     max_workers: int,
 ) -> None:
     bridge = CvBridge()
-    counters = defaultdict(int)
     type_lookup = topic_type_lookup(topics)
     msg_class_cache: Dict[str, type] = {}
 
@@ -174,10 +172,7 @@ def extract_images(
                 msg_class_cache[msg_cls_key] = get_message(msg_type)
             msg = deserialize_message(data, msg_class_cache[msg_cls_key])
 
-            relative_idx = counters[topic]
-            counters[topic] += 1
-            timestamp_ms = timestamp // 1_000_000
-            filename = f"{relative_idx:06d}_{timestamp_ms:013d}.jpg"
+            filename = f"{timestamp:019d}.jpg"
             destination = output_dirs[topic] / filename
 
             future = executor.submit(
