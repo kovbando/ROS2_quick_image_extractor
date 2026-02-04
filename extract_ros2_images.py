@@ -33,7 +33,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Extract sensor_msgs Image/CompressedImage messages from a ROS2 bag",
     )
-    parser.add_argument("bag_db3", type=Path, help="Path to the .db3 file inside the ROS2 bag folder")
+    parser.add_argument(
+        "bag_path",
+        type=Path,
+        help="Path to a ROS2 bag directory or one of its .db3 files",
+    )
     parser.add_argument("output", type=Path, help="Directory where extracted JPEGs will be written")
     parser.add_argument(
         "--max-workers",
@@ -44,7 +48,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--quality",
         type=int,
-        default=95,
+        default=90,
         help="JPEG quality (0-100)",
     )
     parser.add_argument(
@@ -54,6 +58,20 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Optional subset of topics to extract (default: all image/compressed image topics)",
     )
     return parser.parse_args(argv)
+
+
+def resolve_bag_directory(bag_path: Path) -> Path:
+    if not bag_path.exists():
+        raise SystemExit(f"Bag path {bag_path} does not exist")
+    if bag_path.is_dir():
+        bag_dir = bag_path
+    elif bag_path.suffix.lower() == ".db3":
+        bag_dir = bag_path.parent
+    else:
+        raise SystemExit("Bag path must be a directory or a .db3 file")
+    if not any(bag_dir.glob("*.db3")):
+        raise SystemExit(f"No .db3 files found under {bag_dir}")
+    return bag_dir
 
 
 def load_metadata(bag_dir: Path) -> Dict:
@@ -194,10 +212,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     if args.quality < 0 or args.quality > 100:
         raise SystemExit("--quality must be between 0 and 100")
 
-    bag_db3 = args.bag_db3.resolve()
-    if not bag_db3.exists():
-        raise SystemExit(f"Bag file {bag_db3} does not exist")
-    bag_dir = bag_db3.parent
+    bag_path = args.bag_path.resolve()
+    bag_dir = resolve_bag_directory(bag_path)
 
     metadata = load_metadata(bag_dir)
     topics = select_image_topics(metadata, args.topics)
