@@ -8,7 +8,8 @@ Extract `sensor_msgs/msg/Image` and `sensor_msgs/msg/CompressedImage` topics fro
 - ROS 2 environment (rclpy, rosbag2_py, rosidl_runtime_py)
 - `cv_bridge`
 - OpenCV Python bindings (`cv2`)
-- PyYAML
+- `PyYAML`
+- `tqdm` (for the progress bar)
 
 Install the Python dependencies via your ROS 2 distribution or with `pip` inside an activated ROS 2 workspace:
 ```bash
@@ -26,6 +27,7 @@ python3 extract_ros2_images.py <path/to/bag_directory_or_db3> <output/directory>
 - Use `--topics` to restrict extraction to a subset of image topics.
 - `--max-workers` controls how many parallel encoder threads run (defaults to CPU count). Each image topic spins up its own rosbag reader so topics stream concurrently while still preserving per-topic ordering.
 - `--quality` sets the JPEG quality factor (0–100).
+- A global progress bar (powered by `tqdm`) tracks how many frames have been written; disable it with `--no-progress` if you prefer quiet output.
 
 The script prints the detected image topics before extraction starts and reports completion when all frames are written.
 

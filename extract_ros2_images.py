@@ -23,6 +23,11 @@ except ImportError as exc:  # pragma: no cover - handled at runtime
         "Missing ROS2 dependencies. Make sure cv_bridge, rosbag2_py, and rclpy are installed."
     ) from exc
 
+try:  # pragma: no cover - optional dependency warning handled at runtime
+    from tqdm import tqdm
+except ImportError:  # pragma: no cover - fallback when tqdm missing
+    tqdm = None
+
 IMAGE_TYPES = {
     "sensor_msgs/msg/image",
     "sensor_msgs/msg/compressedimage",
@@ -56,6 +61,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         metavar="TOPIC",
         nargs="*",
         help="Optional subset of topics to extract (default: all image/compressed image topics)",
+    )
+    parser.add_argument(
+        "--no-progress",
+        action="store_true",
+        help="Disable the terminal progress bar",
     )
     return parser.parse_args(argv)
 
@@ -156,6 +166,7 @@ def extract_images(
     output_dirs: Dict[str, Path],
     quality: int,
     max_workers: int,
+    progress: "tqdm | None" = None,
 ) -> None:
     bridge = CvBridge()
     type_lookup = topic_type_lookup(topics)
@@ -194,6 +205,8 @@ def extract_images(
             msg = deserialize_message(data, msg_cls)
             destination = output_dirs[topic] / f"{timestamp:019d}.jpg"
             submit_encode(topic, msg_type, msg, destination)
+            if progress is not None:
+                progress.update(1)
 
     with ThreadPoolExecutor(max_workers=writer_pool_workers) as writer_executor:
         with ThreadPoolExecutor(max_workers=len(topics)) as reader_executor:
@@ -233,7 +246,24 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     list_topics(topics)
 
-    extract_images(bag_dir, topics, output_dirs, args.quality, args.max_workers)
+    total_messages = sum(info["count"] for info in topics.values())
+    progress_bar: "tqdm | None" = None
+    try:
+        if not args.no_progress:
+            if tqdm is None:
+                print("tqdm is not installed; install it or use --no-progress to silence this message.")
+            else:
+                progress_bar = tqdm(
+                    total=total_messages,
+                    unit="img",
+                    desc="Extracting",
+                    dynamic_ncols=True,
+                )
+        extract_images(bag_dir, topics, output_dirs, args.quality, args.max_workers, progress_bar)
+    finally:
+        if progress_bar is not None:
+            progress_bar.close()
+
     print(f"Extraction complete. Images written under {output_root}")
 
 
