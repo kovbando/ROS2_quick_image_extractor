@@ -1,3 +1,6 @@
+# TODO: README OVERHAUL
+
+
 # ROS2_quick_image_extractor
 Extract `sensor_msgs/msg/Image` and `sensor_msgs/msg/CompressedImage` topics from a ROS 2 bag into JPEG files while mirroring the topic hierarchy in the output directory.
 
@@ -21,7 +24,7 @@ python3 extract_ros2_images.py <path/to/bag_directory_or_db3> <output/directory>
 - All extracted frames are written as JPEGs under the provided output directory, preserving the ROS topic hierarchy (e.g., `/camera/left/image_raw` → `<output>/camera/left/image_raw`).
 - Each file is named after the message's nanosecond timestamp (e.g., `1714398730123456789.jpg`) to keep ordering deterministic across topics.
 - Use `--topics` to restrict extraction to a subset of image topics.
-- `--max-workers` controls how many parallel encoder threads run (defaults to CPU count). ROS bag reading remains sequential, but encoding/writing is parallelized.
+- `--max-workers` controls how many parallel encoder threads run (defaults to CPU count). Each image topic spins up its own rosbag reader so topics stream concurrently while still preserving per-topic ordering.
 - `--quality` sets the JPEG quality factor (0–100).
 
 The script prints the detected image topics before extraction starts and reports completion when all frames are written.

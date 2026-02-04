@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import argparse
 import os
-from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+import threading
+from concurrent.futures import ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import Dict, Iterable, Sequence
 
@@ -150,7 +151,7 @@ def encode_and_write_image(
 
 
 def extract_images(
-    reader: rosbag2_py.SequentialReader,
+    bag_dir: Path,
     topics: Dict[str, Dict],
     output_dirs: Dict[str, Path],
     quality: int,
@@ -158,41 +159,52 @@ def extract_images(
 ) -> None:
     bridge = CvBridge()
     type_lookup = topic_type_lookup(topics)
-    msg_class_cache: Dict[str, type] = {}
+    writer_pool_workers = max(1, max_workers)
+    pending_limit = writer_pool_workers * 4
+    inflight = threading.Semaphore(pending_limit)
+    writer_futures = []
+    writer_futures_lock = threading.Lock()
 
-    pending = set()
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+    def submit_encode(topic: str, msg_type: str, msg: object, destination: Path) -> None:
+        inflight.acquire()
+        future = writer_executor.submit(
+            encode_and_write_image,
+            topic,
+            msg_type,
+            msg,
+            destination,
+            quality,
+            bridge,
+        )
+
+        def _release(_future):
+            inflight.release()
+
+        future.add_done_callback(_release)
+        with writer_futures_lock:
+            writer_futures.append(future)
+
+    def process_topic(topic: str) -> None:
+        reader = create_reader(bag_dir)
+        reader.set_filter(rosbag2_py.StorageFilter(topics=[topic]))
+        msg_type = type_lookup[topic]
+        msg_cls = get_message(msg_type)
         while reader.has_next():
-            topic, data, timestamp = reader.read_next()
-            if topic not in topics:
-                continue
-            msg_type = type_lookup[topic]
-            msg_cls_key = msg_type
-            if msg_cls_key not in msg_class_cache:
-                msg_class_cache[msg_cls_key] = get_message(msg_type)
-            msg = deserialize_message(data, msg_class_cache[msg_cls_key])
+            _, data, timestamp = reader.read_next()
+            msg = deserialize_message(data, msg_cls)
+            destination = output_dirs[topic] / f"{timestamp:019d}.jpg"
+            submit_encode(topic, msg_type, msg, destination)
 
-            filename = f"{timestamp:019d}.jpg"
-            destination = output_dirs[topic] / filename
+    with ThreadPoolExecutor(max_workers=writer_pool_workers) as writer_executor:
+        with ThreadPoolExecutor(max_workers=len(topics)) as reader_executor:
+            reader_futures = [reader_executor.submit(process_topic, topic) for topic in topics]
+            for future in reader_futures:
+                future.result()
 
-            future = executor.submit(
-                encode_and_write_image,
-                topic,
-                msg_type,
-                msg,
-                destination,
-                quality,
-                bridge,
-            )
-            pending.add(future)
-            if len(pending) >= max_workers * 4:
-                completed, pending = wait(pending, return_when=FIRST_COMPLETED)
-                for job in completed:
-                    job.result()
-        if pending:
-            completed, _ = wait(pending)
-            for job in completed:
-                job.result()
+        if writer_futures:
+            wait(writer_futures)
+            for future in writer_futures:
+                future.result()
 
 
 def list_topics(topics: Dict[str, Dict]) -> None:
@@ -221,12 +233,7 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     list_topics(topics)
 
-    reader = create_reader(bag_dir)
-    reader.set_filter(
-        rosbag2_py.StorageFilter(topics=list(topics.keys())),
-    )
-
-    extract_images(reader, topics, output_dirs, args.quality, args.max_workers)
+    extract_images(bag_dir, topics, output_dirs, args.quality, args.max_workers)
     print(f"Extraction complete. Images written under {output_root}")
 
 
