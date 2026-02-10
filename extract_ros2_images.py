@@ -43,7 +43,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=Path,
         help="Path to a ROS2 bag directory or one of its .db3 files",
     )
-    parser.add_argument("output", type=Path, help="Directory where extracted JPEGs will be written")
+    parser.add_argument(
+        "output",
+        nargs="?",
+        type=Path,
+        default=None,
+        help="Directory where extracted JPEGs will be written (defaults to the bag directory)",
+    )
     parser.add_argument(
         "--max-workers",
         type=int,
@@ -240,7 +246,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     if not topics:
         raise SystemExit("No sensor_msgs Image or CompressedImage topics found in the bag")
 
-    output_root = args.output.resolve()
+    output_root = args.output.resolve() if args.output is not None else bag_dir
     output_root.mkdir(parents=True, exist_ok=True)
     output_dirs = ensure_topic_dirs(topics.keys(), output_root)
 
